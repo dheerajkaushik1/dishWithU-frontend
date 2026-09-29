@@ -3105,3 +3105,49 @@ button.rail-item { cursor: pointer; }
   .watch .people-count svg { display: none; }
   .watch .people-count { border: 0; }
 }
+
+/* Desktop watch rooms fit inside the viewport; chat owns its message scroll. */
+@media (min-width: 761px) {
+  html:has(.room-shell), body:has(.room-shell) { height: 100%; min-height: 0; overflow: hidden; }
+  #root:has(.room-shell) { height: 100dvh; min-height: 0; overflow: hidden; }
+  .app-shell.room-shell { height: 100dvh; min-height: 0; overflow: hidden; }
+  .watch,.watch.sidebar-open,.watch.chat-open,.watch.sidebar-open.chat-open {
+    box-sizing: border-box; height: 100%; min-height: 0; overflow: hidden;
+    padding: 0 clamp(14px, 1.5vw, 24px) 12px; gap: 10px;
+    grid-template-rows: 58px minmax(0, 1fr); align-content: stretch; align-items: stretch;
+  }
+  .watch.sidebar-open { grid-template-columns: 220px minmax(0, 1fr); }
+  .watch.chat-open { grid-template-columns: minmax(0, 1fr) 340px; }
+  .watch.sidebar-open.chat-open { grid-template-columns: 220px minmax(0, 1fr) 340px; }
+  .watch .room-head { position: relative; top: auto; width: 100%; min-height: 0; height: 58px; margin: 0; padding: 0; }
+  .watch .watch-grid { height: 100%; min-height: 0; align-self: stretch; padding: 0; overflow: hidden; }
+  .watch .player { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .watch .player-heading { flex: none; min-height: 34px; margin: 0 0 8px; }
+  .watch .video-box { flex: 1 1 0; width: 100%; height: auto; min-height: 0; max-height: none; aspect-ratio: auto; }
+  .watch .video-box video { width: 100%; height: 100%; object-fit: contain; }
+  .watch .movie-file-info { flex: none; margin-top: 6px; padding: 6px 9px; }
+  .watch .privacy-note { flex: none; margin: 6px 0 0; padding: 6px 9px; }
+  .watch .media-error { flex: none; margin-top: 6px; }
+  .watch .reaction-strip { flex: none; min-height: 44px; margin: 8px 0 0; padding: 7px 10px; }
+  .watch .room-rail { position: relative; top: auto; height: 100%; min-height: 0; align-self: stretch; overflow-y: auto; }
+  .watch .room-side { position: relative; top: auto; height: 100%; min-height: 0; align-self: stretch; overflow: hidden; }
+  .watch .chat-panel { height: 100%; min-height: 0; }
+  .watch .chat-panel-head,.watch .chat-composer { flex: none; }
+  .watch .chat-messages { flex: 1 1 0; min-height: 0; overflow-y: auto; }
+  .watch .room-foot { display: none; }
+}
+
+@media (min-width: 761px) and (max-width: 1100px) {
+  .watch.sidebar-open { grid-template-columns: 190px minmax(0, 1fr); }
+  .watch.chat-open { grid-template-columns: minmax(0, 1fr) 300px; }
+  .watch.sidebar-open.chat-open { grid-template-columns: 190px minmax(0, 1fr) 300px; }
+  .watch .room-rail { padding: 11px; }
+  .watch .reaction-strip { padding: 6px 7px; }
+}
+
+@media (max-width: 760px) {
+  html:has(.room-shell), body:has(.room-shell), #root:has(.room-shell), .app-shell.room-shell {
+    height: auto; min-height: 100dvh; overflow-x: hidden; overflow-y: auto;
+  }
+  .watch .video-box { flex: none; height: auto; aspect-ratio: 16 / 9; }
+}

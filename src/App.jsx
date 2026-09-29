@@ -1077,7 +1077,7 @@ function WatchRoom() {
   const reactionTimersRef = useRef(new Set());
   const hostId = room?.host?._id || room?.host?.id;
   const myId = user?._id || user?.id;
-  const isHost = hostId === myId;
+  const isHost = Boolean(hostId && myId && String(hostId) === String(myId));
   useEffect(() => {
     chatOpenRef.current = chatOpen;
   }, [chatOpen]);
