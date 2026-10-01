@@ -3151,3 +3151,91 @@ button.rail-item { cursor: pointer; }
   }
   .watch .video-box { flex: none; height: auto; aspect-ratio: 16 / 9; }
 }
+
+/* Watch room mobile landscape: keep the movie full size and float room tools above it. */
+.portrait-watch-notice { display: none; }
+.watch .video-box.fit-fit video { object-fit: contain; }
+.watch .video-box.fit-fill video { object-fit: cover; }
+.watch .player-control.fit-toggle { width: auto; min-width: 44px; padding: 0 8px; font-size: 10px; font-weight: 800; }
+.watch .player-control.fit-toggle.selected { color: var(--theme-accent); background: color-mix(in srgb, var(--theme-current), transparent 78%); }
+@media (max-width: 760px) {
+  html:has(.room-shell), body:has(.room-shell), #root:has(.room-shell), .app-shell.room-shell {
+    width: 100%; height: 100dvh; min-height: 0; overflow: hidden;
+  }
+  .watch,.watch.sidebar-open,.watch.chat-open,.watch.sidebar-open.chat-open {
+    position: relative; box-sizing: border-box; width: 100%; height: 100dvh; min-height: 0;
+    padding: max(4px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(5px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    display: grid; grid-template-columns: minmax(0,1fr); grid-template-rows: 44px minmax(0,1fr) 42px;
+    grid-template-areas: "head" "player" "reactions"; gap: 4px; overflow: hidden;
+  }
+  .watch .room-head { grid-area: head; position: relative; top: auto; z-index: 30; width: 100%; height: 44px; min-height: 44px; margin: 0; padding: 0 4px; }
+  .watch .room-head>div { gap: 5px; }
+  .watch .room-head>div:first-child { flex: 1; }
+  .watch .room-head>div:first-child>span { font-size: 9px; white-space: nowrap; }
+  .watch .room-head .brand-icon,.watch .socket-state,.watch .peer-state,.watch .room-head .close-room { display: none; }
+  .watch .room-head .icon-btn { width: 40px; height: 40px; flex: none; }
+  .watch .people-count { gap: 4px; padding-left: 5px; font-size: 9px; white-space: nowrap; }
+  .watch .people-count svg { display: none; }
+  .watch .chat-trigger { width: 42px; height: 42px; min-width: 42px; padding: 0; }
+  .watch .chat-trigger span { display: none; }
+  .watch .room-theme-trigger { display: none; }
+  .watch .watch-grid { grid-area: player; width: 100%; height: 100%; min-height: 0; overflow: hidden; padding: 0; }
+  .watch .player { width: 100%; height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 0; overflow: hidden; }
+  .watch .player-heading { display: none; }
+  .watch .video-box { position: relative; flex: 1 1 0; width: 100%; height: 100%; min-height: 0; max-height: none; aspect-ratio: auto; border-radius: 10px; }
+  .watch .video-box video { width: 100%; height: 100%; object-fit: contain; }
+  .watch .movie-controls { padding: 26px 8px max(6px, env(safe-area-inset-bottom)); }
+  .watch .seek-slider { height: 12px; margin-bottom: 2px; }
+  .watch .seek-slider::-webkit-slider-thumb { width: 13px; height: 13px; }
+  .watch .control-row { min-height: 44px; gap: clamp(2px, 1vw, 7px); }
+  .watch .player-control { width: 44px; height: 44px; }
+  .watch .player-control.fit-toggle { min-width: 46px; width: auto; padding-inline: 6px; font-size: 10px; }
+  .watch .skip-control small { font-size: 8px; }
+  .watch .time-readout { font-size: 9px; }
+  .watch .volume-slider { width: clamp(34px, 8vw, 55px); }
+  .watch .playback-indicator,.watch .guest-control-note { display: none; }
+  .watch .movie-file-info,.watch .privacy-note,.watch .player>.error-text { display: none; }
+  .watch .reaction-strip { grid-area: reactions; min-height: 0; height: 42px; margin: 0; padding: 2px 8px; display: flex; align-items: center; justify-content: center; flex-wrap: nowrap; gap: 8px; overflow: hidden; }
+  .watch .reaction-strip>div:first-child { display: none; }
+  .watch .reaction-strip .reaction-picker { width: 100%; display: flex; justify-content: space-evenly; gap: 3px; }
+  .watch .reaction-button { width: 40px; height: 38px; min-width: 40px; font-size: 18px; }
+  .watch .room-rail,.watch.sidebar-open .room-rail { position: fixed; z-index: 70; top: max(8px, env(safe-area-inset-top)); right: auto; bottom: max(8px, env(safe-area-inset-bottom)); left: max(8px, env(safe-area-inset-left)); width: min(290px, calc(100vw - 42px)); height: auto; min-height: 0; overflow-y: auto; }
+  .watch .room-side,.watch.chat-open .room-side { position: fixed; z-index: 65; top: 52px; right: max(9px, env(safe-area-inset-right)); bottom: 50px; left: auto; width: min(42vw, 350px); min-width: 245px; height: auto; max-height: calc(100dvh - 108px); min-height: 0; padding: 0; display: block; opacity: 0; visibility: hidden; pointer-events: none; transform: translateX(calc(100% + 16px)); transition: transform .26s ease, opacity .2s ease, visibility .26s; }
+  .watch.chat-open .room-side { opacity: 1; visibility: visible; pointer-events: auto; transform: translateX(0); }
+  .watch .chat-panel { width: 100%; height: 100%; min-height: 0; overflow: hidden; border-color: color-mix(in srgb, var(--theme-accent), transparent 48%); border-radius: 12px; background: color-mix(in srgb, var(--theme-current), transparent 82%); -webkit-backdrop-filter: blur(16px) saturate(140%); backdrop-filter: blur(16px) saturate(140%); box-shadow: 0 14px 38px rgba(0,0,0,.28), 0 0 24px var(--theme-glow); }
+  .watch .chat-panel-head { min-height: 50px; flex: none; padding: 7px 9px; background: color-mix(in srgb, var(--theme-current), transparent 68%); }
+  .watch .chat-panel-head .eyebrow { font-size: 7px; }
+  .watch .chat-panel-head h2 { margin-top: 2px; font-size: 12px; }
+  .watch .chat-panel-head .icon-btn { width: 40px; height: 40px; }
+  .watch .chat-messages { min-height: 0; flex: 1 1 0; padding: 9px; background: linear-gradient(180deg, rgba(5,7,20,.20), rgba(5,7,20,.47)); }
+  .watch .chat-message { gap: 6px; }
+  .watch .chat-message-body { background: rgba(10,8,25,.62); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+  .watch .chat-composer { flex: none; padding: 7px; background: rgba(8,7,23,.64); }
+  .watch .chat-composer input { min-width: 0; font-size: 12px; }
+  .watch .send-message { width: 40px; height: 40px; }
+  .watch .room-error { top: 49px; left: 8px; right: 8px; }
+  .watch>.modal-backdrop { z-index: 90; }
+  .watch:fullscreen { width: 100vw; height: 100dvh; padding: 0; grid-template-rows: 0 minmax(0,1fr) 0; }
+  .watch:fullscreen .room-head,.watch:fullscreen .reaction-strip { display: none; }
+  .watch:fullscreen .room-side,.watch:fullscreen .room-rail { display: none !important; }
+  .watch:fullscreen .watch-grid { grid-row: 2; }
+  .watch:fullscreen .video-box { border-radius: 0; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  .watch:not(:fullscreen) { grid-template-rows: 44px minmax(0,1fr) 42px; }
+  .watch:not(:fullscreen) .portrait-watch-notice { position: fixed; z-index: 40; top: 50%; left: 50%; width: min(280px, calc(100vw - 36px)); transform: translate(-50%,-50%); display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 18px; border: 1px solid var(--theme-stroke); border-radius: 14px; color: #fff; text-align: center; background: color-mix(in srgb, var(--theme-current), transparent 27%); -webkit-backdrop-filter: blur(15px); backdrop-filter: blur(15px); box-shadow: 0 10px 35px rgba(0,0,0,.35),0 0 24px var(--theme-glow); }
+  .watch .portrait-watch-notice svg { color: var(--theme-accent); }
+  .watch .portrait-watch-notice b { font-size: 14px; }
+  .watch .portrait-watch-notice span { color: #cbc9db; font-size: 10px; }
+}
+@media (max-width: 760px) and (orientation: landscape) {
+  .watch .room-side,.watch.chat-open .room-side { top: 49px; right: max(8px, env(safe-area-inset-right)); bottom: 49px; width: min(40vw, 350px); min-width: 230px; max-height: calc(100dvh - 98px); }
+  .watch .chat-panel-head { min-height: 42px; }
+  .watch .chat-panel-head .icon-btn,.watch .send-message { width: 38px; height: 38px; }
+  .watch .chat-panel-head .eyebrow { display: none; }
+  .watch .chat-panel-head h2 { margin: 0; }
+  .watch .chat-composer { padding: 4px 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .watch .room-side { transition-duration: .01ms; }
+}

@@ -40,6 +40,7 @@ import {
   Palette,
   Play,
   Radio,
+  RotateCw,
   Send,
   Settings,
   ShieldCheck,
@@ -1052,6 +1053,7 @@ function WatchRoom() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
+  const [fitMode, setFitMode] = useState("fit");
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seeking, setSeeking] = useState(false);
   const [mediaError, setMediaError] = useState("");
@@ -1494,6 +1496,7 @@ function WatchRoom() {
   };
 
   const toggleFullscreen = () => {
+    setChatOpen(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
     else playerFrameRef.current?.requestFullscreen?.().catch(() => {});
   };
@@ -1578,6 +1581,7 @@ function WatchRoom() {
     );
   return (
     <main className={`watch page-enter ${leftSidebarOpen ? "sidebar-open" : ""} ${chatOpen ? "chat-open" : ""}`} data-theme={theme.toLowerCase()}>
+      <div className="portrait-watch-notice" role="status"><RotateCw size={22} /><b>Rotate your phone for the best watch experience</b><span>Your room controls remain available above.</span></div>
       <header className="room-head">
         <div>
           <button className="icon-btn drawer-trigger" onClick={() => setLeftSidebarOpen((open) => !open)} title={leftSidebarOpen ? "Close room navigation" : "Open room navigation"} aria-label={leftSidebarOpen ? "Close room navigation" : "Open room navigation"} aria-expanded={leftSidebarOpen}><PanelLeft size={16} /></button>
@@ -1660,7 +1664,7 @@ function WatchRoom() {
             {isHost ? <button className="button change-movie" onClick={() => fileInputRef.current?.click()}><Film size={15} /> {movie.name ? "Change Movie" : "Choose Movie"}</button> : <span className="private-tag"><LockKeyhole size={12} /> HOST CONTROLS PLAYBACK</span>}
           </div>
           <input ref={fileInputRef} className="movie-file-input" type="file" accept="video/*" onChange={selectVideo} />
-          <div className={`video-box ${controlsVisible ? "controls-visible" : "controls-idle"}`} ref={playerFrameRef} onMouseMove={revealControls} onMouseLeave={() => { if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current); if (isPlaying) setControlsVisible(false); }}>
+          <div className={`video-box fit-${fitMode} ${controlsVisible ? "controls-visible" : "controls-idle"}`} ref={playerFrameRef} onMouseMove={revealControls} onMouseLeave={() => { if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current); if (isPlaying) setControlsVisible(false); }}>
             {url || remoteStream ? (
               <video
                 ref={videoRef}
@@ -1705,6 +1709,7 @@ function WatchRoom() {
                 <span className="playback-indicator"><i /> {isHost ? "HOST" : "SYNCED"}</span>
                 <button className="player-control volume-toggle" onClick={() => setIsMuted((value) => !value)} title={isMuted ? "Unmute" : "Mute"} aria-label={isMuted ? "Unmute" : "Mute"}>{isMuted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
                 <input className="volume-slider" aria-label="Volume" type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={(event) => { setVolume(Number(event.target.value)); setIsMuted(false); }} />
+                <button className={`player-control fit-toggle ${fitMode === "fit" ? "selected" : ""}`} onClick={() => setFitMode((mode) => mode === "fit" ? "fill" : "fit")} title="Fit video" aria-label={`Fit video: ${fitMode === "fit" ? "Fit" : "Fill"}`} aria-pressed={fitMode === "fit"}>{fitMode === "fit" ? "Fit ✓" : "Fill"}</button>
                 <button className="player-control" onClick={toggleFullscreen} title="Full screen" aria-label="Full screen"><Maximize size={17} /></button>
               </div>
               {!isHost && <span className="guest-control-note">Playback is controlled by the host</span>}
