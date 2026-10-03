@@ -40,7 +40,6 @@ import {
   Palette,
   Play,
   Radio,
-  RotateCw,
   Send,
   Settings,
   ShieldCheck,
@@ -55,6 +54,7 @@ import {
   VolumeX,
   X,
 } from "lucide-react";
+import { createPortal } from "react-dom";
 import { authApi, roomApi } from "./services/api";
 import { createRoomSocket } from "./services/socket";
 import "./styles.css";
@@ -1053,13 +1053,20 @@ function WatchRoom() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [volume, setVolume] = useState(1);
   const [isMuted, setIsMuted] = useState(false);
-  const [fitMode, setFitMode] = useState("fit");
+  const [videoFit, setVideoFit] = useState("contain");
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seeking, setSeeking] = useState(false);
   const [mediaError, setMediaError] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
-  const [chatOpen, setChatOpen] = useState(false);
+  const [chatOpen, setChatOpen] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [fullscreenTarget, setFullscreenTarget] = useState(null);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
+  const [playerHeight, setPlayerHeight] = useState(() => {
+    const savedHeight = Number(localStorage.getItem("dishwithu-player-height"));
+    return Number.isFinite(savedHeight) && savedHeight > 0 ? savedHeight : null;
+  });
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(false);
   const [unreadMessages, setUnreadMessages] = useState(0);
   const peerRef = useRef(null);
@@ -1070,6 +1077,7 @@ function WatchRoom() {
   const reactionsRef = useRef(null);
   const chatEndRef = useRef(null);
   const chatOpenRef = useRef(chatOpen);
+  const resizeRef = useRef(null);
   const urlRef = useRef("");
   const streamRef = useRef(null);
   const candidateQueue = useRef([]);
@@ -1083,6 +1091,44 @@ function WatchRoom() {
   useEffect(() => {
     chatOpenRef.current = chatOpen;
   }, [chatOpen]);
+  useEffect(() => {
+    const mobileQuery = window.matchMedia("(max-width: 760px)");
+    const updateMobile = () => {
+      setIsMobile(mobileQuery.matches);
+      if (mobileQuery.matches) setChatOpen(true);
+    };
+    const updateFullscreen = () => {
+      const target = playerFrameRef.current;
+      const active = document.fullscreenElement === target;
+      setIsFullscreen(active);
+      setFullscreenTarget(active ? target : null);
+      setChatOpen(active ? false : mobileQuery.matches);
+    };
+    mobileQuery.addEventListener("change", updateMobile);
+    document.addEventListener("fullscreenchange", updateFullscreen);
+    return () => {
+      mobileQuery.removeEventListener("change", updateMobile);
+      document.removeEventListener("fullscreenchange", updateFullscreen);
+    };
+  }, []);
+  useEffect(() => {
+    if (playerHeight) localStorage.setItem("dishwithu-player-height", String(playerHeight));
+  }, [playerHeight]);
+  useEffect(() => {
+    const constrainHeight = () => {
+      const mobile = window.matchMedia("(max-width: 760px)").matches;
+      const minimum = mobile ? (window.matchMedia("(orientation: landscape)").matches ? Math.min(180, Math.max(90, window.innerHeight - 245)) : 125) : 300;
+      const reserve = mobile ? (window.matchMedia("(orientation: landscape)").matches ? 205 : 248) : 278;
+      const maximum = Math.max(minimum, window.innerHeight - reserve);
+      setPlayerHeight((height) => height ? Math.min(maximum, Math.max(minimum, height)) : height);
+    };
+    window.addEventListener("resize", constrainHeight);
+    window.visualViewport?.addEventListener("resize", constrainHeight);
+    return () => {
+      window.removeEventListener("resize", constrainHeight);
+      window.visualViewport?.removeEventListener("resize", constrainHeight);
+    };
+  }, []);
   useEffect(() => {
     let active = true;
     roomApi
@@ -1496,9 +1542,35 @@ function WatchRoom() {
   };
 
   const toggleFullscreen = () => {
-    setChatOpen(false);
     if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else playerFrameRef.current?.requestFullscreen?.().catch(() => {});
+    else {
+      setChatOpen(false);
+      playerFrameRef.current?.requestFullscreen?.().catch(() => {});
+    }
+  };
+
+  const startPlayerResize = (event) => {
+    if (isFullscreen) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    resizeRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      startHeight: playerFrameRef.current?.getBoundingClientRect().height || 0,
+    };
+  };
+  const movePlayerResize = (event) => {
+    const resize = resizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) return;
+    const mobile = window.matchMedia("(max-width: 760px)").matches;
+    const landscape = window.matchMedia("(orientation: landscape)").matches;
+    const minHeight = mobile ? (landscape ? Math.min(180, Math.max(90, window.innerHeight - 245)) : 125) : 300;
+    const reserve = mobile ? (landscape ? 205 : 248) : 278;
+    const maxHeight = Math.max(minHeight, window.innerHeight - reserve);
+    setPlayerHeight(Math.max(minHeight, Math.min(maxHeight, resize.startHeight + event.clientY - resize.startY)));
+  };
+  const endPlayerResize = (event) => {
+    if (resizeRef.current?.pointerId === event.pointerId) resizeRef.current = null;
   };
 
   const sendMessage = (event) => {
@@ -1579,9 +1651,25 @@ function WatchRoom() {
         </Link>
       </main>
     );
+  const chatVisible = isFullscreen ? chatOpen : isMobile || chatOpen;
+  const roomChat = (
+    <aside className={`room-side ${chatVisible ? "open" : ""} ${isFullscreen ? (chatVisible ? "fullscreen-chat" : "fullscreen-chat-closed") : ""}`} aria-hidden={!chatVisible} inert={!chatVisible}>
+      <section className="chat-panel" ref={chatPanelRef}>
+        <div className="chat-panel-head"><div><span className="eyebrow">YOUR WATCH PARTY</span><h2>Room chat</h2></div><span className="chat-live"><i className={socketStatus === "connected" ? "live-dot" : "wait-dot"} /> {socketStatus === "connected" ? "Live" : "Reconnecting"}</span><button className="icon-btn" onClick={() => setChatOpen(false)} title="Close chat" aria-label="Close chat"><X size={16} /></button></div>
+        <div className="chat-messages" aria-live="polite">
+          {messages.length === 0 ? <div className="chat-empty"><span className="chat-empty-icon"><Heart size={18} /></span><b>No messages yet</b><p>Send the first note while your movie gets ready.</p></div> : messages.map((message) => {
+            const own = String(message.userId) === String(myId);
+            return <article className={`chat-message ${own ? "own" : ""}`} key={message.id}><span className="chat-avatar" aria-label={message.username || "Participant"}>{message.username?.trim()?.slice(0, 1)?.toUpperCase() || <UserRound size={13} />}</span><div className="chat-message-body"><p>{message.message}</p></div></article>;
+          })}
+          <div ref={chatEndRef} />
+        </div>
+        {chatError && <p className="chat-error" role="alert">{chatError}</p>}
+        <form className="chat-composer" onSubmit={sendMessage}><input aria-label="Write a message" maxLength={500} value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) sendMessage(event); }} placeholder="Type a message..." disabled={!socket?.connected} /><button className="send-message" type="submit" disabled={!socket?.connected || !messageDraft.trim()} aria-label="Send message" title="Send message"><Send size={15} /></button></form>
+      </section>
+    </aside>
+  );
   return (
-    <main className={`watch page-enter ${leftSidebarOpen ? "sidebar-open" : ""} ${chatOpen ? "chat-open" : ""}`} data-theme={theme.toLowerCase()}>
-      <div className="portrait-watch-notice" role="status"><RotateCw size={22} /><b>Rotate your phone for the best watch experience</b><span>Your room controls remain available above.</span></div>
+    <main className={`watch page-enter ${leftSidebarOpen ? "sidebar-open" : ""} ${chatOpen ? "chat-open" : ""}`} data-theme={theme.toLowerCase()} style={playerHeight ? { "--watch-player-height": `${playerHeight}px` } : undefined}>
       <header className="room-head">
         <div>
           <button className="icon-btn drawer-trigger" onClick={() => setLeftSidebarOpen((open) => !open)} title={leftSidebarOpen ? "Close room navigation" : "Open room navigation"} aria-label={leftSidebarOpen ? "Close room navigation" : "Open room navigation"} aria-expanded={leftSidebarOpen}><PanelLeft size={16} /></button>
@@ -1664,11 +1752,14 @@ function WatchRoom() {
             {isHost ? <button className="button change-movie" onClick={() => fileInputRef.current?.click()}><Film size={15} /> {movie.name ? "Change Movie" : "Choose Movie"}</button> : <span className="private-tag"><LockKeyhole size={12} /> HOST CONTROLS PLAYBACK</span>}
           </div>
           <input ref={fileInputRef} className="movie-file-input" type="file" accept="video/*" onChange={selectVideo} />
-          <div className={`video-box fit-${fitMode} ${controlsVisible ? "controls-visible" : "controls-idle"}`} ref={playerFrameRef} onMouseMove={revealControls} onMouseLeave={() => { if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current); if (isPlaying) setControlsVisible(false); }}>
+          <div className={`video-box ${controlsVisible ? "controls-visible" : "controls-idle"}`} ref={playerFrameRef} onPointerMove={revealControls} onMouseLeave={() => { if (controlsTimerRef.current) window.clearTimeout(controlsTimerRef.current); if (isPlaying) setControlsVisible(false); }}>
+            {isHost && selectedFile && <button className="mobile-change-movie" onClick={() => fileInputRef.current?.click()} title="Change movie" aria-label="Change movie"><Film size={15} /></button>}
+            {isFullscreen && <button className="fullscreen-chat-trigger" onClick={() => { setChatOpen((open) => !open); setUnreadMessages(0); }} title={chatOpen ? "Close chat" : "Open chat"} aria-label={chatOpen ? "Close chat" : "Open chat"}>{chatOpen ? <X size={18} /> : <MessageCircle size={18} />}{unreadMessages > 0 && !chatOpen && <i className="unread-badge">{unreadMessages > 9 ? "9+" : unreadMessages}</i>}</button>}
             {url || remoteStream ? (
               <video
                 ref={videoRef}
                 src={isHost ? url : undefined}
+                style={{ objectFit: videoFit }}
                 controls={false}
                 autoPlay={!isHost}
                 playsInline
@@ -1709,13 +1800,14 @@ function WatchRoom() {
                 <span className="playback-indicator"><i /> {isHost ? "HOST" : "SYNCED"}</span>
                 <button className="player-control volume-toggle" onClick={() => setIsMuted((value) => !value)} title={isMuted ? "Unmute" : "Mute"} aria-label={isMuted ? "Unmute" : "Mute"}>{isMuted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
                 <input className="volume-slider" aria-label="Volume" type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={(event) => { setVolume(Number(event.target.value)); setIsMuted(false); }} />
-                <button className={`player-control fit-toggle ${fitMode === "fit" ? "selected" : ""}`} onClick={() => setFitMode((mode) => mode === "fit" ? "fill" : "fit")} title="Fit video" aria-label={`Fit video: ${fitMode === "fit" ? "Fit" : "Fill"}`} aria-pressed={fitMode === "fit"}>{fitMode === "fit" ? "Fit ✓" : "Fill"}</button>
+                <button className={`player-control fit-toggle ${videoFit === "contain" ? "selected" : ""}`} onClick={() => setVideoFit((mode) => mode === "contain" ? "cover" : "contain")} title="Fit video" aria-label={`Fit video: ${videoFit === "contain" ? "Fit" : "Fill"}`} aria-pressed={videoFit === "contain"}>{videoFit === "contain" ? "Fit ✓" : "Fill"}</button>
                 <button className="player-control" onClick={toggleFullscreen} title="Full screen" aria-label="Full screen"><Maximize size={17} /></button>
               </div>
               {!isHost && <span className="guest-control-note">Playback is controlled by the host</span>}
             </div>}
           </div>
           {selectedFile && isHost && <div className="movie-file-info"><span><Film size={14} /><b>{selectedFile.name}</b></span><small>{selectedFile.type || "Video file"}{selectedFile.size ? ` · ${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : ""} · Local only</small>{movieBusy && <span className="preparing-label"><Spinner /> Preparing</span>}</div>}
+          <div className="player-resize-handle" role="separator" aria-label="Resize player height" aria-orientation="horizontal" aria-valuenow={playerHeight || 0} tabIndex={0} onPointerDown={startPlayerResize} onPointerMove={movePlayerResize} onPointerUp={endPlayerResize} onPointerCancel={endPlayerResize} onLostPointerCapture={endPlayerResize} onKeyDown={(event) => { const step = event.shiftKey ? 40 : 12; const landscape = window.matchMedia("(orientation: landscape)").matches; const minimum = isMobile ? (landscape ? Math.min(180, Math.max(90, window.innerHeight - 245)) : 125) : 300; const reserve = isMobile ? (landscape ? 205 : 248) : 278; const current = playerHeight || Math.round(window.innerHeight * (isMobile ? 0.38 : 0.56)); if (event.key === "ArrowUp") { event.preventDefault(); setPlayerHeight(Math.min(Math.max(minimum, window.innerHeight - reserve), current + step)); } if (event.key === "ArrowDown") { event.preventDefault(); setPlayerHeight(Math.max(minimum, current - step)); } }} />
           <ErrorText>{mediaError}</ErrorText>
           <div className="privacy-note">
             <ShieldCheck size={16} />
@@ -1733,20 +1825,7 @@ function WatchRoom() {
           </section>
         </div>
       </section>
-      <aside className={`room-side ${chatOpen ? "open" : ""}`} aria-hidden={!chatOpen} inert={!chatOpen}>
-        <section className="chat-panel" ref={chatPanelRef}>
-            <div className="chat-panel-head"><div><span className="eyebrow">YOUR WATCH PARTY</span><h2>Room chat</h2></div><span className="chat-live"><i className={socketStatus === "connected" ? "live-dot" : "wait-dot"} /> {socketStatus === "connected" ? "Live" : "Reconnecting"}</span><button className="icon-btn" onClick={() => setChatOpen(false)} title="Close chat" aria-label="Close chat"><X size={16} /></button></div>
-            <div className="chat-messages" aria-live="polite">
-              {messages.length === 0 ? <div className="chat-empty"><span className="chat-empty-icon"><Heart size={18} /></span><b>No messages yet</b><p>Send the first note while your movie gets ready.</p></div> : messages.map((message) => {
-                const own = String(message.userId) === String(myId);
-                return <article className={`chat-message ${own ? "own" : ""}`} key={message.id}><span className="chat-avatar" aria-label={message.username || "Participant"}>{message.username?.trim()?.slice(0, 1)?.toUpperCase() || <UserRound size={13} />}</span><div className="chat-message-body"><p>{message.message}</p></div></article>;
-              })}
-              <div ref={chatEndRef} />
-            </div>
-            {chatError && <p className="chat-error" role="alert">{chatError}</p>}
-            <form className="chat-composer" onSubmit={sendMessage}><input aria-label="Write a message" maxLength={500} value={messageDraft} onChange={(event) => setMessageDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) sendMessage(event); }} placeholder="Type a message..." disabled={!socket?.connected} /><button className="send-message" type="submit" disabled={!socket?.connected || !messageDraft.trim()} aria-label="Send message" title="Send message"><Send size={15} /></button></form>
-        </section>
-      </aside>
+      {isFullscreen && fullscreenTarget ? createPortal(roomChat, fullscreenTarget) : roomChat}
       {confirm && (
         <div className="modal-backdrop">
           <section
