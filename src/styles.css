@@ -1259,6 +1259,25 @@ input:focus-visible {
   object-fit: contain;
   background: #1d2721;
 }
+.sound-enable-prompt {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: calc(100% - 24px);
+  padding: 11px 15px;
+  border: 1px solid #ffffff50;
+  border-radius: 6px;
+  background: #1d2721eF;
+  color: #fff;
+  font: 600 12px Manrope, sans-serif;
+  cursor: pointer;
+}
 .video-empty {
   text-align: center;
   color: #e7ece6;
@@ -3570,6 +3589,7 @@ button.rail-item { cursor: pointer; }
   min-height: 0;
   overflow-y: auto;
 }
+.watch .rail-item.rail-close { color: #ff8eae; }
 .watch .header-movie-button:focus-visible,
 .watch .player-control:focus-visible,
 .watch .reaction-button:focus-visible,

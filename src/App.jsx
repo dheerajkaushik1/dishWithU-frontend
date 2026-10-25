@@ -735,8 +735,12 @@ function Home() {
 
 function Dashboard() {
   const { user, socket } = useAuth();
+  const location = useLocation();
   return (
     <main className="dashboard wrap page-enter">
+      {location.state?.roomClosed && (
+        <div className="notice" role="status">{location.state.roomClosed}</div>
+      )}
       <div className="welcome">
         <div>
           <span className="eyebrow">
@@ -1030,6 +1034,7 @@ function WatchRoom() {
   const { token, user, socket } = useAuth();
   const navigate = useNavigate();
   const [room, setRoom] = useState(null);
+  const [roomRole, setRoomRole] = useState(null);
   const [people, setPeople] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -1057,6 +1062,7 @@ function WatchRoom() {
   const [controlsVisible, setControlsVisible] = useState(true);
   const [seeking, setSeeking] = useState(false);
   const [mediaError, setMediaError] = useState("");
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirm, setConfirm] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
@@ -1074,6 +1080,7 @@ function WatchRoom() {
   const chatOpenRef = useRef(chatOpen);
   const urlRef = useRef("");
   const streamRef = useRef(null);
+  const remoteStreamRef = useRef(null);
   const candidateQueue = useRef([]);
   const remotePlaybackRef = useRef({ currentTime: 0, isPlaying: false, startedAt: 0 });
   const controlsTimerRef = useRef(null);
@@ -1081,7 +1088,9 @@ function WatchRoom() {
   const reactionTimersRef = useRef(new Set());
   const hostId = room?.host?._id || room?.host?.id;
   const myId = user?._id || user?.id;
-  const isHost = Boolean(hostId && myId && String(hostId) === String(myId));
+  const isHost = roomRole
+    ? roomRole === "HOST"
+    : Boolean(hostId && myId && String(hostId) === String(myId));
   useEffect(() => {
     chatOpenRef.current = chatOpen;
   }, [chatOpen]);
@@ -1135,7 +1144,9 @@ function WatchRoom() {
       peerRef.current.close();
       peerRef.current = null;
     }
+    remoteStreamRef.current = null;
     setRemoteStream(null);
+    setPlaybackBlocked(false);
     setPeerStatus("waiting");
     candidateQueue.current = [];
   }, []);
@@ -1151,7 +1162,10 @@ function WatchRoom() {
           candidate: event.candidate,
         });
     };
-    peer.onconnectionstatechange = () =>
+    peer.onconnectionstatechange = () => {
+      if (import.meta.env.DEV) {
+        console.info("[DishWithU] WebRTC connection state:", peer.connectionState);
+      }
       setPeerStatus(
         {
           connected: "connected",
@@ -1161,8 +1175,33 @@ function WatchRoom() {
           closed: "disconnected",
         }[peer.connectionState] || "connecting",
       );
+    };
     peer.ontrack = (event) => {
-      if (event.streams[0]) setRemoteStream(event.streams[0]);
+      const stream = remoteStreamRef.current || new MediaStream();
+      const incomingTracks = [
+        ...(event.streams || []).flatMap((incomingStream) => incomingStream.getTracks()),
+        event.track,
+      ];
+      incomingTracks.forEach((track) => {
+        if (!stream.getTracks().some((existingTrack) => existingTrack.id === track.id)) {
+          stream.addTrack(track);
+        }
+      });
+      remoteStreamRef.current = stream;
+      if (import.meta.env.DEV) {
+        const tracks = stream.getTracks();
+        console.info("[DishWithU] Received remote media tracks:", {
+          videoTrackCount: stream.getVideoTracks().length,
+          audioTrackCount: stream.getAudioTracks().length,
+          tracks: tracks.map(({ kind, readyState, enabled, muted }) => ({
+            kind,
+            readyState,
+            enabled,
+            muted,
+          })),
+        });
+      }
+      setRemoteStream(stream);
     };
     peerRef.current = peer;
     return peer;
@@ -1174,20 +1213,36 @@ function WatchRoom() {
       let needsNegotiation = false;
       if (nextStream) {
         for (const kind of ["video", "audio"]) {
-          const nextTrack = nextStream.getTracks().find((track) => track.kind === kind) || null;
-          const sender = peer.getSenders().find((item) => item.track?.kind === kind) || peer.getSenders().find((item) => item.track == null && item.__dishWithUKind === kind);
-          if (sender) {
-            if (sender.track !== nextTrack) {
-              await sender.replaceTrack(nextTrack);
-            }
-          } else if (nextTrack) {
-            const addedSender = peer.addTrack(nextTrack, nextStream);
-            addedSender.__dishWithUKind = kind;
-            needsNegotiation = true;
-          } else {
+          const nextTracks = nextStream.getTracks().filter((track) => track.kind === kind);
+          const kindSenders = peer.getSenders().filter(
+            (sender) => sender.track?.kind === kind || sender.__dishWithUKind === kind,
+          );
+          if (nextTracks.length === 0 && kindSenders.length === 0) {
             const transceiver = peer.addTransceiver(kind, { direction: "sendonly" });
             transceiver.sender.__dishWithUKind = kind;
             needsNegotiation = true;
+            continue;
+          }
+          const assignedSenders = new Set();
+          for (const nextTrack of nextTracks) {
+            const sender = kindSenders.find((item) => item.track?.id === nextTrack.id)
+              || kindSenders.find((item) => !assignedSenders.has(item));
+            if (sender) {
+              if (sender.track !== nextTrack) await sender.replaceTrack(nextTrack);
+              sender.__dishWithUKind = kind;
+              assignedSenders.add(sender);
+            } else {
+              const addedSender = peer.addTrack(nextTrack, nextStream);
+              addedSender.__dishWithUKind = kind;
+              kindSenders.push(addedSender);
+              assignedSenders.add(addedSender);
+              needsNegotiation = true;
+            }
+          }
+          for (const sender of kindSenders) {
+            if (!assignedSenders.has(sender) && sender.track) {
+              await sender.replaceTrack(null);
+            }
           }
         }
         streamRef.current = nextStream;
@@ -1208,8 +1263,30 @@ function WatchRoom() {
       setMediaError(
         "Could not start video sharing. Reload the room and try again.",
       );
+      return false;
     }
+    return true;
   }, [makePeer, roomId, socket]);
+  const attemptPlayback = useCallback(async (video = videoRef.current) => {
+    if (!video) return false;
+    try {
+      await video.play();
+      setPlaybackBlocked(false);
+      return true;
+    } catch (playError) {
+      if (playError?.name === "NotAllowedError" && !isHost) {
+        if (import.meta.env.DEV) {
+          console.info("[DishWithU] Remote playback blocked by autoplay policy.");
+        }
+        setPlaybackBlocked(true);
+      } else {
+        setMediaError(isHost
+          ? "This video could not be played by your browser."
+          : "Remote playback could not start. Check the browser’s media permissions and try again.");
+      }
+      return false;
+    }
+  }, [isHost]);
   useEffect(() => {
     if (!room || !socket) return undefined;
     const joined = () => {
@@ -1225,6 +1302,7 @@ function WatchRoom() {
     };
     const onJoinedState = (state) => {
       setSocketStatus("connected");
+      if (state.role === "HOST" || state.role === "GUEST") setRoomRole(state.role);
       if (state.theme) setTheme(state.theme);
       if (state.movie) {
         setMovie(state.movie);
@@ -1276,24 +1354,39 @@ function WatchRoom() {
       }, 2400);
       reactionTimersRef.current.add(timer);
     };
-    const syncGuestPlayback = (time, playing) => {
-      if (isHost) return;
-      const safeTime = Number.isFinite(time) ? time : remotePlaybackRef.current.currentTime;
+    const applyPlaybackState = (time, playing, applyTransport = true) => {
+      const safeTime = Number.isFinite(time) && time >= 0
+        ? time
+        : remotePlaybackRef.current.currentTime;
       remotePlaybackRef.current = { currentTime: safeTime, isPlaying: playing, startedAt: Date.now() };
       setCurrentTime(safeTime);
       setIsPlaying(playing);
       const video = videoRef.current;
-      if (video && Number.isFinite(video.duration)) video.currentTime = safeTime;
-      if (playing) video?.play().catch(() => {});
-      else video?.pause();
+      if (!video) return;
+      if ((isHost || !video.srcObject) && video.readyState >= 1 && Math.abs(video.currentTime - safeTime) > 0.35) {
+        video.currentTime = safeTime;
+      }
+      if (applyTransport) {
+        if (playing && video.paused) {
+          void attemptPlayback(video);
+        } else if (!playing && !video.paused) {
+          video.pause();
+        }
+      }
     };
-    const onPlaybackPlay = ({ currentTime }) => syncGuestPlayback(currentTime, true);
-    const onPlaybackPause = ({ currentTime }) => syncGuestPlayback(currentTime, false);
+    const onPlaybackPlay = ({ currentTime }) => applyPlaybackState(currentTime, true);
+    const onPlaybackPause = ({ currentTime }) => applyPlaybackState(currentTime, false);
     const onPlaybackSeek = ({ currentTime }) => {
-      if (isHost) return;
-      remotePlaybackRef.current = { ...remotePlaybackRef.current, currentTime, startedAt: Date.now() };
-      setCurrentTime(currentTime);
-      if (videoRef.current && Number.isFinite(videoRef.current.duration)) videoRef.current.currentTime = currentTime;
+      const playing = remotePlaybackRef.current.isPlaying;
+      applyPlaybackState(currentTime, playing, false);
+    };
+    const onPlaybackError = ({ message }) => setMediaError(message || "Playback could not be synchronized.");
+    const onRoomClosed = ({ message }) => {
+      closePeer();
+      navigate("/dashboard", {
+        replace: true,
+        state: { roomClosed: message || "The host closed this watch room." },
+      });
     };
     const onUserJoined = (person) => {
       setPeople((current) =>
@@ -1364,6 +1457,8 @@ function WatchRoom() {
       ["playback:play", onPlaybackPlay],
       ["playback:pause", onPlaybackPause],
       ["playback:seek", onPlaybackSeek],
+      ["playback:error", onPlaybackError],
+      ["room:closed", onRoomClosed],
       ["webrtc:offer", onOffer],
       ["webrtc:answer", onAnswer],
       ["webrtc:ice-candidate", onCandidate],
@@ -1375,17 +1470,29 @@ function WatchRoom() {
       listeners.forEach(([event, listener]) => socket.off(event, listener));
       closePeer();
     };
-  }, [room, socket, roomId, isHost, myId, closePeer, makePeer, offerToGuest]);
+  }, [room, socket, roomId, isHost, myId, closePeer, makePeer, offerToGuest, attemptPlayback, navigate]);
   useEffect(() => {
-    if (remoteStream && videoRef.current)
-      videoRef.current.srcObject = remoteStream;
-  }, [remoteStream]);
+    const video = videoRef.current;
+    if (!remoteStream || !video) return;
+    video.srcObject = remoteStream;
+    video.defaultMuted = false;
+    if (!isHost && remotePlaybackRef.current.isPlaying) {
+      void attemptPlayback(video);
+    }
+  }, [remoteStream, isHost, attemptPlayback]);
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
     video.volume = volume;
     video.muted = isMuted;
-  }, [volume, isMuted, url, remoteStream]);
+    if (!isHost && remoteStream && import.meta.env.DEV) {
+      console.info("[DishWithU] Remote video audio output:", {
+        muted: video.muted,
+        defaultMuted: video.defaultMuted,
+        volume: video.volume,
+      });
+    }
+  }, [volume, isMuted, url, remoteStream, isHost]);
   useEffect(() => {
     if (!url) return undefined;
     return () => URL.revokeObjectURL(url);
@@ -1412,13 +1519,13 @@ function WatchRoom() {
     return () => window.clearInterval(interval);
   }, [isHost, room, roomId, theme, token]);
   useEffect(() => {
-    if (isHost || !isPlaying) return undefined;
+    if (isHost || !isPlaying || seeking) return undefined;
     const interval = window.setInterval(() => {
       const state = remotePlaybackRef.current;
       setCurrentTime(state.currentTime + Math.max(0, Date.now() - state.startedAt) / 1000);
     }, 300);
     return () => window.clearInterval(interval);
-  }, [isHost, isPlaying]);
+  }, [isHost, isPlaying, seeking]);
 
   const publishCurrentStream = async () => {
     const video = videoRef.current;
@@ -1431,15 +1538,32 @@ function WatchRoom() {
       setMediaError("The video is still preparing. Try again in a moment.");
       return;
     }
-    await offerToGuest(stream);
-    setMediaError("");
+    const videoTracks = stream.getVideoTracks();
+    const audioTracks = stream.getAudioTracks();
+    if (import.meta.env.DEV) {
+      console.info("[DishWithU] Captured local media tracks:", {
+        videoTrackCount: videoTracks.length,
+        audioTrackCount: audioTracks.length,
+        tracks: stream.getTracks().map(({ kind, readyState, enabled, muted }) => ({
+          kind,
+          readyState,
+          enabled,
+          muted,
+        })),
+      });
+    }
+    const published = await offerToGuest(stream);
+    if (!published) return;
+    setMediaError(audioTracks.length
+      ? ""
+      : "No audio track was captured from this video. It may be silent or use an audio codec this browser cannot capture.");
   };
 
   const onVideoMetadata = () => {
     const video = videoRef.current;
     if (!video) return;
     const videoDuration = Number.isFinite(video.duration) ? video.duration : 0;
-    setDuration(videoDuration);
+    if (Number.isFinite(video.duration)) setDuration(video.duration);
     if (!isHost || !selectedFile) return;
     const nextMovie = { name: selectedFile.name, type: selectedFile.type || "video", duration: videoDuration };
     setMovie(nextMovie);
@@ -1450,12 +1574,14 @@ function WatchRoom() {
       resumeAfterLoadRef.current = false;
       video.play().then(() => {
         setIsPlaying(true);
+        remotePlaybackRef.current = { currentTime: 0, isPlaying: true, startedAt: Date.now() };
         socket?.emit("playback:play", { roomId, currentTime: 0 });
       }).catch(() => setMediaError("The new movie is ready. Press play to start it."));
     }
   };
 
   const selectVideo = (event) => {
+    if (!isHost) return;
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
@@ -1477,30 +1603,60 @@ function WatchRoom() {
     setUrl(nextUrl);
   };
 
+  const sharedPlaybackTime = () => {
+    const playback = remotePlaybackRef.current;
+    if (isHost) return videoRef.current?.currentTime ?? playback.currentTime;
+    return playback.currentTime + (playback.isPlaying
+      ? Math.max(0, Date.now() - playback.startedAt) / 1000
+      : 0);
+  };
+
   const togglePlayback = async () => {
-    if (!isHost || !videoRef.current || !url) return;
+    if (!videoRef.current || movieBusy || !(url || remoteStream)) return;
     const video = videoRef.current;
     if (video.paused) {
-      try {
-        await video.play();
-        setIsPlaying(true);
-        socket?.emit("playback:play", { roomId, currentTime: video.currentTime });
-        await publishCurrentStream();
-      } catch {
-        setMediaError("This video could not be played by your browser.");
+      if (!await attemptPlayback(video)) return;
+      setIsPlaying(true);
+      const playbackTime = sharedPlaybackTime();
+      remotePlaybackRef.current = { currentTime: playbackTime, isPlaying: true, startedAt: Date.now() };
+      if (!socket?.connected) {
+        setMediaError("Playback changed locally, but the room is reconnecting.");
+        return;
       }
+      socket?.emit("playback:play", { roomId, currentTime: playbackTime });
+      if (isHost) await publishCurrentStream();
     } else {
+      const playbackTime = sharedPlaybackTime();
       video.pause();
       setIsPlaying(false);
-      socket?.emit("playback:pause", { roomId, currentTime: video.currentTime });
+      remotePlaybackRef.current = { currentTime: playbackTime, isPlaying: false, startedAt: Date.now() };
+      if (!socket?.connected) {
+        setMediaError("Playback changed locally, but the room is reconnecting.");
+        return;
+      }
+      socket?.emit("playback:pause", { roomId, currentTime: playbackTime });
     }
   };
 
+  const enableRemotePlayback = async () => {
+    const video = videoRef.current;
+    if (!video) return;
+    setIsMuted(false);
+    video.muted = false;
+    if (await attemptPlayback(video)) setMediaError("");
+  };
+
   const seekTo = (time) => {
-    if (!isHost || !videoRef.current || !Number.isFinite(time)) return;
+    if (!videoRef.current || !Number.isFinite(time) || !(url || remoteStream)) return;
     const nextTime = Math.max(0, Math.min(time, duration || time));
-    videoRef.current.currentTime = nextTime;
+    const video = videoRef.current;
+    if (isHost && video.readyState >= 1) video.currentTime = nextTime;
     setCurrentTime(nextTime);
+    remotePlaybackRef.current = { ...remotePlaybackRef.current, currentTime: nextTime, startedAt: Date.now() };
+    if (!socket?.connected) {
+      setMediaError("The seek changed locally, but the room is reconnecting.");
+      return;
+    }
     socket?.emit("playback:seek", { roomId, currentTime: nextTime });
   };
 
@@ -1684,6 +1840,7 @@ function WatchRoom() {
         <button className="rail-item" onClick={() => { setChatOpen(true); setUnreadMessages(0); }}><MessageCircle size={15} /> Chat {unreadMessages > 0 && <small className="rail-unread">{unreadMessages}</small>}</button>
         <button className="rail-item" onClick={() => { setThemeDraft(theme); setThemePickerOpen(true); }} disabled={!isHost} title={isHost ? "Choose the room theme" : `Host selected ${theme}`}><Palette size={15} /> Theme {isHost && <ArrowRight size={12} />}</button>
         <button className="rail-item disabled" disabled title="No room settings are exposed by this backend"><Settings size={15} /> Room settings</button>
+        {isHost && <button className="rail-item rail-close" onClick={() => setConfirm(true)}><X size={15} /> Close room</button>}
         <button className="rail-leave" onClick={leave}><LogOut size={14} /> Leave room</button>
       </aside>
       <section className="watch-grid">
@@ -1712,14 +1869,19 @@ function WatchRoom() {
                 src={isHost ? url : undefined}
                 style={{ objectFit: videoFit }}
                 controls={false}
-                autoPlay={!isHost}
                 playsInline
                 preload="metadata"
                 onLoadedMetadata={onVideoMetadata}
                 onTimeUpdate={(event) => { if (isHost && !seeking) setCurrentTime(event.currentTarget.currentTime); }}
-                onPlay={() => setIsPlaying(true)}
-                onPause={() => setIsPlaying(false)}
-                onEnded={() => { if (isHost) socket?.emit("playback:pause", { roomId, currentTime: videoRef.current?.currentTime || 0 }); }}
+                onPlay={() => {
+                  setIsPlaying(true);
+                  remotePlaybackRef.current = { ...remotePlaybackRef.current, currentTime: isHost ? videoRef.current?.currentTime || 0 : remotePlaybackRef.current.currentTime, isPlaying: true, startedAt: Date.now() };
+                }}
+                onPause={() => {
+                  setIsPlaying(false);
+                  remotePlaybackRef.current = { ...remotePlaybackRef.current, currentTime: isHost ? videoRef.current?.currentTime || 0 : remotePlaybackRef.current.currentTime, isPlaying: false, startedAt: Date.now() };
+                }}
+                onEnded={() => { socket?.emit("playback:pause", { roomId, currentTime: isHost ? videoRef.current?.currentTime || 0 : remotePlaybackRef.current.currentTime }); }}
               />
             ) : (
               <div className="video-empty">
@@ -1739,22 +1901,22 @@ function WatchRoom() {
                 {isHost && <button className="button cream upload" onClick={() => fileInputRef.current?.click()}><Upload size={15} /> Choose Movie</button>}
               </div>
             )}
+            {playbackBlocked && !isHost && <button className="sound-enable-prompt" onClick={enableRemotePlayback}><Volume2 size={17} /> Click to start playback with sound</button>}
             {movieBusy && <div className="movie-preparing"><Spinner /> Preparing local movie...</div>}
             {reactionBursts.length > 0 && <div className="reaction-floats" aria-live="polite">{reactionBursts.map((item) => <span className="reaction-float" key={item.localId}>{item.reaction}</span>)}</div>}
             {(url || remoteStream) && <div className={`movie-controls ${controlsVisible ? "shown" : "faded"}`} onMouseEnter={() => setControlsVisible(true)}>
-              <input className="seek-slider" aria-label="Seek movie" title={isHost ? "Drag to seek" : "Playback is controlled by the host"} type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(currentTime, duration || currentTime)} disabled={!isHost || !duration} onPointerDown={() => setSeeking(true)} onChange={(event) => { setSeeking(true); setCurrentTime(Number(event.target.value)); }} onPointerUp={(event) => { seekTo(Number(event.currentTarget.value)); setSeeking(false); }} onPointerCancel={() => setSeeking(false)} onBlur={(event) => { if (seeking) { seekTo(Number(event.currentTarget.value)); setSeeking(false); } }} onKeyUp={(event) => { seekTo(Number(event.currentTarget.value)); setSeeking(false); }} style={{ "--seek-progress": `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%` }} />
+              <input className="seek-slider" aria-label="Seek movie" title="Drag to seek for everyone in the room" type="range" min="0" max={Math.max(duration, 1)} step="0.1" value={Math.min(currentTime, duration || currentTime)} disabled={!(url || remoteStream) || !duration || movieBusy} onPointerDown={() => setSeeking(true)} onChange={(event) => { setSeeking(true); setCurrentTime(Number(event.target.value)); }} onPointerUp={(event) => { seekTo(Number(event.currentTarget.value)); setSeeking(false); }} onPointerCancel={() => setSeeking(false)} onBlur={(event) => { if (seeking) { seekTo(Number(event.currentTarget.value)); setSeeking(false); } }} onKeyUp={(event) => { seekTo(Number(event.currentTarget.value)); setSeeking(false); }} style={{ "--seek-progress": `${duration ? Math.min(100, (currentTime / duration) * 100) : 0}%` }} />
               <div className="control-row">
-                <button className="player-control" onClick={togglePlayback} disabled={!isHost || !url || movieBusy} title={isPlaying ? "Pause movie" : "Play movie"} aria-label={isPlaying ? "Pause movie" : "Play movie"}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
-                <button className="player-control skip-control" onClick={() => seekTo(currentTime - 10)} disabled={!isHost || !url || !duration} title="Back 10 seconds" aria-label="Back 10 seconds"><SkipBack size={17} /><small>10</small></button>
-                <button className="player-control skip-control" onClick={() => seekTo(currentTime + 10)} disabled={!isHost || !url || !duration} title="Forward 10 seconds" aria-label="Forward 10 seconds"><SkipForward size={17} /><small>10</small></button>
+                <button className="player-control" onClick={togglePlayback} disabled={!(url || remoteStream) || movieBusy} title={isPlaying ? "Pause movie for everyone" : "Play movie for everyone"} aria-label={isPlaying ? "Pause movie for everyone" : "Play movie for everyone"}>{isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}</button>
+                <button className="player-control skip-control" onClick={() => seekTo(currentTime - 10)} disabled={!(url || remoteStream) || !duration || movieBusy} title="Back 10 seconds for everyone" aria-label="Back 10 seconds"><SkipBack size={17} /><small>10</small></button>
+                <button className="player-control skip-control" onClick={() => seekTo(currentTime + 10)} disabled={!(url || remoteStream) || !duration || movieBusy} title="Forward 10 seconds for everyone" aria-label="Forward 10 seconds"><SkipForward size={17} /><small>10</small></button>
                 <span className="time-readout">{formatTime(currentTime)} <i>/</i> {formatTime(duration)}</span>
-                <span className="playback-indicator"><i /> {isHost ? "HOST" : "SYNCED"}</span>
+                <span className="playback-indicator"><i /> {isHost ? "HOST" : "GUEST"}</span>
                 <button className="player-control volume-toggle" onClick={() => setIsMuted((value) => !value)} title={isMuted ? "Unmute" : "Mute"} aria-label={isMuted ? "Unmute" : "Mute"}>{isMuted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}</button>
                 <input className="volume-slider" aria-label="Volume" type="range" min="0" max="1" step="0.05" value={isMuted ? 0 : volume} onChange={(event) => { setVolume(Number(event.target.value)); setIsMuted(false); }} />
                 <button className={`player-control fit-toggle ${videoFit === "contain" ? "selected" : ""}`} onClick={() => setVideoFit((mode) => mode === "contain" ? "cover" : "contain")} title={`Switch to ${videoFit === "contain" ? "Fill" : "Fit"}`} aria-label={`Video mode: ${videoFit === "contain" ? "Fit" : "Fill"}`} aria-pressed={videoFit === "contain"}>{videoFit === "contain" ? "Fit" : "Fill"}</button>
                 <button className="player-control" onClick={toggleFullscreen} title="Full screen" aria-label="Full screen"><Maximize size={17} /></button>
               </div>
-              {!isHost && <span className="guest-control-note">Playback is controlled by the host</span>}
             </div>}
           </div>
           {selectedFile && isHost && <div className="movie-file-info"><span><Film size={14} /><b>{selectedFile.name}</b></span><small>{selectedFile.type || "Video file"}{selectedFile.size ? ` · ${(selectedFile.size / (1024 * 1024)).toFixed(1)} MB` : ""} · Local only</small>{movieBusy && <span className="preparing-label"><Spinner /> Preparing</span>}</div>}
@@ -1771,7 +1933,7 @@ function WatchRoom() {
         {!isFullscreen && roomChat}
       </section>
       {isFullscreen && fullscreenTarget && createPortal(roomChat, fullscreenTarget)}
-      {confirm && (
+7      {confirm && (
         <div className="modal-backdrop">
           <section
             className="modal"
