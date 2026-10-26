@@ -3756,3 +3756,188 @@ button.rail-item { cursor: pointer; }
   padding: 5px 6px 5px 11px;
   background: rgba(10, 12, 30, .92);
 }
+
+/* Keep the player and chat as sibling columns so the player does not reflow
+   into an unused grid column when chat visibility changes. */
+@media (min-width: 761px) {
+  .watch,
+  .watch.sidebar-open,
+  .watch.chat-open,
+  .watch.sidebar-open.chat-open {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+    grid-template-areas: "head" "player";
+    align-items: stretch;
+    transition: grid-template-columns .26s ease;
+  }
+
+  .watch.chat-open {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+    grid-template-areas: "head head" "player chat";
+  }
+
+  .watch.sidebar-open {
+    grid-template-columns: 220px minmax(0, 1fr);
+    grid-template-areas: "head head" "nav player";
+  }
+
+  .watch.sidebar-open.chat-open {
+    grid-template-columns: 220px minmax(0, 1fr) minmax(280px, 360px);
+    grid-template-areas: "head head head" "nav player chat";
+  }
+
+  .watch .room-head {
+    grid-area: head;
+    min-width: 0;
+  }
+
+  .watch .room-rail {
+    position: relative;
+    inset: auto;
+    grid-area: nav;
+    display: none;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    margin: 0;
+  }
+
+  .watch.sidebar-open .room-rail {
+    display: flex;
+  }
+
+  .watch .watch-grid {
+    grid-area: player;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .watch .player {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .watch .video-box {
+    flex: 0 1 auto;
+    width: 100%;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    max-height: 100%;
+    aspect-ratio: 16 / 9;
+  }
+
+  .watch .room-side {
+    position: relative;
+    inset: auto;
+    grid-area: chat;
+    align-self: stretch;
+    display: none;
+    width: 100%;
+    height: auto;
+    min-width: 0;
+    min-height: 0;
+    margin: 0 0 8px;
+    padding: 0;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
+  }
+
+  .watch.chat-open .room-side {
+    display: flex;
+    height: auto;
+    margin-bottom: 8px;
+  }
+
+  .watch .chat-panel {
+    flex: 1 1 auto;
+    width: 100%;
+    height: 100%;
+    min-width: 0;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .watch,
+  .watch.sidebar-open,
+  .watch.chat-open,
+  .watch.sidebar-open.chat-open {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+    grid-template-areas: "head" "player";
+    gap: 10px;
+  }
+
+  .watch:not(:fullscreen),
+  .watch.sidebar-open:not(:fullscreen),
+  .watch.chat-open:not(:fullscreen),
+  .watch.sidebar-open.chat-open:not(:fullscreen) {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 44px minmax(0, 1fr);
+    grid-template-areas: "head" "player";
+  }
+
+  .watch .video-box {
+    width: 100%;
+    height: auto;
+    min-height: 0;
+    max-height: 100%;
+    aspect-ratio: 16 / 9;
+  }
+
+  .watch .room-side,
+  .watch.chat-open .room-side {
+    position: fixed;
+    z-index: 65;
+    inset: 62px 8px 0 auto;
+    grid-area: auto;
+    width: min(380px, calc(100vw - 16px));
+    height: auto;
+    max-height: none;
+    margin: 0 0 8px;
+    align-self: stretch;
+    justify-self: stretch;
+    display: none;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateX(calc(100% + 16px));
+    transition: transform .26s ease, opacity .2s ease, visibility .26s;
+  }
+
+  .watch.chat-open .room-side.open {
+    display: flex;
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateX(0);
+  }
+
+  .watch .chat-panel {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 760px) and (orientation: landscape) {
+  .watch .room-side,
+  .watch.chat-open .room-side {
+    right: 8px;
+    width: min(40vw, 350px);
+    min-width: 230px;
+    max-height: calc(100dvh - 70px);
+  }
+}
