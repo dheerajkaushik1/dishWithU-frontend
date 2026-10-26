@@ -1933,7 +1933,7 @@ function WatchRoom() {
         {!isFullscreen && roomChat}
       </section>
       {isFullscreen && fullscreenTarget && createPortal(roomChat, fullscreenTarget)}
-7      {confirm && (
+     {confirm && (
         <div className="modal-backdrop">
           <section
             className="modal"
